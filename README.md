@@ -3,7 +3,7 @@
 ## Datasets
 Datasets are available here: TBA
 
-This includes 10 $\mu$ s simulations of (1) AAV2-AAVR system, (2) AAV2-only system, (3) AAVR-only system, and (4) the solution state system. All waters and ions have been removed from the final xtc files for convenience in data handling.
+This includes 10 $\mus$ simulations of (1) AAV2-AAVR system, (2) AAV2-only system, (3) AAVR-only system, and (4) the solution state system. All waters and ions have been removed from the final xtc files for convenience in data handling.
 
 Results from the analyses conducted as described in the paper are also available here: TBA
 
