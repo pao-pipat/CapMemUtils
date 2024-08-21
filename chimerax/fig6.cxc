@@ -1,0 +1,14 @@
+select #1:43-49; color sel orange
+select #1:107-111; color sel red
+select #1:161-169; color sel pink
+select #1:230-249; color sel lime
+select #1:268-285; color sel blue
+select #1:306-322; color sel magenta
+select #1:325-337; color sel violet
+select #1:360-375; color sel yellow
+select #1:485-492; color sel grey
+select #2:7-96; color sel #dde5b6
+select #2:103-193; color sel cyan
+select #2:199-289; color sel #99582a
+select #2:295-383; color sel #ffe6a7
+select #2:389-480; color sel darkgrey
