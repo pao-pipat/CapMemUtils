@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
-from aav_aavr_interaction import numba_cdist
+from timeseries import numba_cdist
 import os
 
 ## Cluster Analysis
