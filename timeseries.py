@@ -70,7 +70,6 @@ class Timeseries:
             coords[i] += positions_cog
         return coords
 
-
     def compute_cog_ts(self) -> np.ndarray:
         init_frame = self.data[0]
         resids = np.array(list(set(init_frame[:,3])))
@@ -107,40 +106,31 @@ class Timeseries:
         return coords_ts
     
     ## Useful function to process the whole timeseries
-    def multiprocess_ts(self, func: callable, num_chunks = 10) -> np.ndarray:
+    def multiprocess_ts(self, func, num_chunks = 10):
+        ## If blocks to catch nonsense
         if num_chunks < 0 or num_chunks == 0:
             raise ValueError("Number of processes cannot be less than or equal to 0.")
         if isinstance(num_chunks, int) == False:
             raise ValueError("Number of processes need to be an integer.")
+        ## Prepare chunks
         chunk_length = int(np.floor(len(self.data) / num_chunks))
         chunk_ind = [i*chunk_length for i in range(num_chunks + 1)]
-        processes = [self.data[chunk_ind[j]: chunk_ind[j+1]] for j in range(len(chunk_ind))]
+        chunks = [self.data[chunk_ind[j]: chunk_ind[j+1]] for j in range(len(chunk_ind))]
+        if chunk_ind[-1] < len(self.data): ## add in extra bit
+            chunks.append(self.data[chunk_ind[-1]: len(self.data)])
+        ## Execute
         with Pool(processes=cpu_count()) as pool:
-            res = pool.map(func, processes)
+            res = pool.map(func, chunks)
         results = np.concatenate(res) ## does not work
         return results
 
+    @staticmethod
     def scipy_cdist_ts(timeseries_A, timeseries_B) -> np.ndarray:
         init_array = np.zeros((len(timeseries_A.data), len(timeseries_A.data[0]), len(timeseries_B.data[0])), dtype=np.float16)
         for i in range(len(timeseries_A.data)):
             dist_array = cdist(timeseries_A.data[i], timeseries_B.data[i])
             init_array[i] += dist_array
         return init_array
-
-    def multiprocess_scipy_cdist_ts(func: callable, timeseries_A: np.ndarray, timeseries_B: np.ndarray) -> np.ndarray:
-        with Pool(processes=cpu_count()) as pool:
-            res = pool.starmap(func, [(timeseries_A[0:1000],timeseries_B[0:1000]),
-                                    (timeseries_A[1000:2000],timeseries_B[1000:2000]),
-                                    (timeseries_A[2000:3000],timeseries_B[2000:3000]),
-                                    (timeseries_A[3000:4000],timeseries_B[3000:4000]),
-                                    (timeseries_A[4000:5000],timeseries_B[4000:5000]),
-                                    (timeseries_A[5000:6000],timeseries_B[5000:6000]),
-                                    (timeseries_A[6000:7000],timeseries_B[6000:7000]),
-                                    (timeseries_A[7000:8000],timeseries_B[7000:8000]),
-                                    (timeseries_A[8000:9000],timeseries_B[8000:9000]),
-                                    (timeseries_A[9000:10001],timeseries_B[9000:10001])])
-            results = np.concatenate((res[0],res[1],res[2],res[3],res[4],res[5],res[6],res[7],res[8],res[9]))
-            return results
     
     @staticmethod
     @nb.njit(fastmath=True,parallel=True)
@@ -165,3 +155,26 @@ class Timeseries:
             dist_array = Timeseries.numba_cdist(timeseries_A.data[i], timeseries_B.data[i])
             init_array[i] += dist_array
         return init_array
+     
+    @staticmethod
+    def multiprocess_dist_ts(timeseries_A: np.ndarray, timeseries_B: np.ndarray, func: callable, num_chunks = 10) -> np.ndarray:
+        ## If blocks to catch nonsense
+        if num_chunks < 0 or num_chunks == 0:
+            raise ValueError("Number of processes cannot be less than or equal to 0.")
+        if isinstance(num_chunks, int) == False:
+            raise ValueError("Number of processes need to be an integer.")
+        if len(timeseries_A.data) != len(timeseries_B.data):
+            raise ValueError("Number of frames should be the same for the two timeseries.")
+        ## Prepare chunks
+        chunk_length = int(np.floor(len(timeseries_A.data) / num_chunks))
+        chunk_ind = [i*chunk_length for i in range(num_chunks + 1)]
+        chunks = [(timeseries_A.data[chunk_ind[j]: chunk_ind[j+1]], timeseries_B.data[chunk_ind[j]: chunk_ind[j+1]]) for j in range(len(chunk_ind))]
+        if chunk_ind[-1] < len(timeseries_A.data): ## add in extra bit
+            chunks.append(
+                (timeseries_A.data[chunk_ind[-1]: len(timeseries_A)], timeseries_B.data[chunk_ind[-1]: len(timeseries_B)])
+                )
+        ## Execute
+        with Pool(processes=cpu_count()) as pool:
+            res = pool.starmap(func, chunks)
+            results = np.concatenate(res)
+            return results
