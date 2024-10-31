@@ -1,193 +1,247 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
-from timeseries import numba_cdist
+from timeseries import *
+from MDAnalysis.analysis.leaflet import LeafletFinder, optimize_cutoff
 import os
 
-## Cluster Analysis
+class Protein(Timeseries):
+    def __init__(self, selection, prefix_path):
+        super().__init__(selection, prefix_path)
 
-def compute_clusters(ff,data, eps_d, ms_d):
-    data_ = data[ff]
-    list_of_lipid_resids = np.array(list(set(data_[:,3])))
-    lipid_coords = []
-    eps_e = eps_d
-    ms_e = ms_d
-    for i in range(len(list_of_lipid_resids)):
-            resid = list_of_lipid_resids[i]
-            positions = data_[np.where(data_[:,3] == resid)][:,0:3]
-            positions_cog = positions.mean(axis=0)
-            lipid_coords.append(positions_cog)
-    lipid_coords = np.array(lipid_coords)
-    model = DBSCAN(eps=eps_e,min_samples=ms_e)
-    model.fit_predict(lipid_coords)
-    return model
 
-def compute_avclustsize(model):
-    cluster_ids = np.array(list(set(model.labels_)))
-    ## Remove Noise Group
-    if -1 in cluster_ids:
-        cluster_ids.sort()
-        cluster_ids = np.delete(cluster_ids, 0, 0)
-    else:
-        pass
-    cluster_ids_count  = []
-    for i in range(len(cluster_ids)):
-        count = np.where(model.labels_ == cluster_ids[i])
-        count = np.array(count)
-        cluster_ids_count.append(count.shape[1])
-    avclustsize = np.array(cluster_ids_count)
-    avclustsize = avclustsize.mean()
-    return avclustsize
+class Membrane(Timeseries):
+    def __init__(self, selection, prefix_path, name, repeat, layer):
+        super().__init__(selection, prefix_path)
+        self.name = name
+        if isinstance(repeat, int) == False:
+            raise ValueError("Number of repeat can only be an integer.")
+        self.repeat = repeat
+        if layer not in ["upper", "lower"]:
+            raise ValueError("Sorry, value for lipid bilayer can only be 'upper' or 'lower'.")
+        self.layer = layer
+        self.data = self.assemble_timeseries_array()
+    
+    def get_layer_reference_phosphates(self):
+        ## Implementing LeafletFinder algorithm by Michaud-Agrawal 2011
+        u = self.universe
+        L =LeafletFinder(u, select="name PO4", cutoff = optimize_cutoff(u, select="name PO4")[0])
+        if self.layer == "upper":
+            PO4_ref = []
+            for t in u.trajectory:
+                PO4_ref_at_t = np.concatenate([L.groups(0).positions,L.groups(0).residues.resids.reshape(-1,1)], axis = 1)
+                PO4_ref.append(PO4_ref_at_t)
+            self.layer_reference_phosphates = np.array(PO4_ref)
+        elif self.layer == "lower":
+            PO4_ref = []
+            for t in u.trajectory:
+                PO4_ref_at_t = np.concatenate([L.groups(1).positions,L.groups(1).residues.resids.reshape(-1,1)], axis = 1)
+                PO4_ref.append(PO4_ref_at_t)
+            self.layer_reference_phosphates = np.array(PO4_ref)
+        return None
+    
+    ############ Cluster Analysis ############
+    ############ Cluster Analysis ############
+    ############ Cluster Analysis ############
+    ############ Cluster Analysis ############
+    ############ Cluster Analysis ############
+    
+    def compute_clusters(self, frame, eps, ms):
+        data_ = self.data[frame]
+        list_of_lipid_resids = np.array(list(set(data_[:,3])))
+        lipid_coords = []
+        for i in range(len(list_of_lipid_resids)):
+                resid = list_of_lipid_resids[i]
+                positions = data_[np.where(data_[:,3] == resid)][:,0:3]
+                positions_cog = positions.mean(axis=0)
+                lipid_coords.append(positions_cog)
+        lipid_coords = np.array(lipid_coords)
+        model = DBSCAN(eps=eps, min_samples=ms)
+        model.fit_predict(lipid_coords)
+        return model
 
-def clust_ts(Lipids_of_Interest,eps_b,ms_b):
-    Lipids_of_Interest_nclust = []
-    Lipids_of_Interest_clustsize = []
-    eps_c = eps_b
-    ms_c = ms_b
-    for i in range(len(Lipids_of_Interest)):
-        model = compute_clusters(i,Lipids_of_Interest, eps_d=eps_c, ms_d=ms_c)
-        if -1 not in set(model.labels_):
-            nclust = len(set(model.labels_))
-        if -1 in set(model.labels_):
-            nclust = len(set(model.labels_)) - 1 ## exclude noise group
-        Lipids_of_Interest_nclust.append(nclust)
-        clustsize = compute_avclustsize(model)
-        Lipids_of_Interest_clustsize.append(clustsize)
+    @staticmethod
+    def compute_average_clustsize(model, exclude_noise = True):
+        cluster_ids = np.array(list(set(model.labels_)))
+        ## Remove Noise Group
+        if exclude_noise:
+            if -1 in cluster_ids:
+                cluster_ids.sort()
+                cluster_ids = np.delete(cluster_ids, 0, 0)
+            else:
+                pass
+        cluster_ids_count  = []
+        for i in range(len(cluster_ids)):
+            count = np.where(model.labels_ == cluster_ids[i])
+            count = np.array(count)
+            cluster_ids_count.append(count.shape[1])
+        avclustsize = np.array(cluster_ids_count)
+        avclustsize = avclustsize.mean()
+        return avclustsize
 
-    Lipids_of_Interest_nclust = np.array(Lipids_of_Interest_nclust)
-    Lipids_of_Interest_clustsize = np.array(Lipids_of_Interest_clustsize)
-    return Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize
+    def clust_ts(self, eps, ms, exclude_noise = True):
+        Lipids_of_Interest_nclust = []
+        Lipids_of_Interest_clustsize = []
+        
+        for i in range(len(self.data)):
+            model = self.compute_clusters(frame = i, eps = eps, ms = ms)
+            if -1 not in set(model.labels_):
+                nclust = len(set(model.labels_))
+            elif exclude_noise:
+                if -1 in set(model.labels_):
+                    nclust = len(set(model.labels_)) - 1 ## exclude noise group
+            Lipids_of_Interest_nclust.append(nclust)
+            clustsize = Membrane.compute_average_clustsize(model)
+            Lipids_of_Interest_clustsize.append(clustsize)
+        Lipids_of_Interest_nclust = np.array(Lipids_of_Interest_nclust)
+        Lipids_of_Interest_clustsize = np.array(Lipids_of_Interest_clustsize)
 
-### Plot
-def plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name):
-    Lipids_of_Interest_nclust_rollingav = []
-    for i in range(len(Lipids_of_Interest_nclust)):
-        rollingav = Lipids_of_Interest_nclust[i:i+50].mean()
-        Lipids_of_Interest_nclust_rollingav.append(rollingav)
-    Lipids_of_Interest_nclust_rollingav = np.array(Lipids_of_Interest_nclust_rollingav)
-    plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust, color = 'blue')
-    plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust_rollingav, color = "cyan")
-    plt.ylabel(f"Number of {name} Clusters")
-    plt.xlabel("Time ($\mu$s)")
-    plt.ylim(0,25)
-    if not os.path.isdir("clust_results"):
-        os.makedirs("clust_results")
-    plt.savefig(f"clust_results/{name}_nclust.png",dpi=300)
-    plt.show()
+        return Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize
+    
+    def run_cluster_dbscan(self, eps, ms, exclude_noise = True):
+        Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize = self.clust_ts(eps, ms, exclude_noise = exclude_noise)
+        if not os.path.isdir("lipid_clusters"):
+            os.makedirs("lipid_clusters")
+        np.savez(f"lipid_clusters/nclust_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", Lipids_of_Interest_nclust)
+        np.savez(f"lipid_clusters/clustsize_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", Lipids_of_Interest_clustsize)
+        return None
+    
+    ############ Xcorr Analysis ############
+    ############ Xcorr Analysis ############
+    ############ Xcorr Analysis ############
+    ############ Xcorr Analysis ############
+    ############ Xcorr Analysis ############
 
-    Lipids_of_Interest_clustsize_rollingav = []
-    for i in range(len(Lipids_of_Interest_clustsize)):
-        rollingav = Lipids_of_Interest_clustsize[i:i+50].mean()
-        Lipids_of_Interest_clustsize_rollingav.append(rollingav)
-    Lipids_of_Interest_clustsize_rollingav = np.array(Lipids_of_Interest_clustsize_rollingav)
+    @staticmethod
+    def map_to_grid(coord, grid_width, grid_height, grid_size):
+        x_index = int(coord[0] // grid_width)
+        y_index = int(coord[1] // grid_height)
+        return x_index + y_index * grid_size
 
-    plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize, color = "lime")
-    plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize_rollingav, color = "darkgreen")
-    plt.ylabel(f"Average Cluster Size\n(Number of {name} molecules within a cluster)")
-    plt.xlabel("Time ($\mu$s)")
-    plt.ylim(0,120)
-    if not os.path.isdir("clust_results"):
-        os.makedirs("clust_results")
-    plt.savefig(f"clust_results/{name}_clustsize.png",dpi=300)
-    plt.show()
+    def xcorr(self, side_length = 18):
+        ## initiate target results lists    
+        lipids_count_matrix = []
+        zdev_list_matrix = []
+        xcorr_matrix = []
+        self.get_layer_reference_phosphates()
 
-## Cross-correlation between # of lipids and the shift in z of the membrane from the average membrane z (i.e. curvature)
-# Function to map bead coordinates to grid indices
-def map_to_grid(coord, grid_width, grid_height, grid_size):
-    x_index = int(coord[0] // grid_width)
-    y_index = int(coord[1] // grid_height)
-    return x_index + y_index * grid_size
+        x_min = min(self.layer_reference_phosphates[:,:,0].min(), self.data[:,:,0].min())
+        x_max = max(self.layer_reference_phosphates[:,:,0].max(), self.data[:,:,0].max())
+        y_min = min(self.layer_reference_phosphates[:,:,1].min(), self.data[:,:,1].min())
+        y_max = max(self.layer_reference_phosphates[:,:,1].max(), self.data[:,:,1].max())
 
-def xcorr(Layer,Lipids_of_Interest):
+        for frame in range(len(self.data)):
+            lipid = self.data[frame]
+            layer = self.layer_reference_phosphates[frame]
+            # Define grid dimensions
+            side_length = side_length
+            grid_width = grid_height = side_length 
 
-    lipids_count_matrix = []
-    zdev_list_matrix = []
-    xcorr_matrix = []
+            ## Grid Size = The number of grid squares along one axis.
+            grid_size = max(x_max - x_min, y_max - y_min) // side_length ## Choose maximum to cover all possible squares.
 
-    x_min = min(Layer[:,:,0].min(), Lipids_of_Interest[:,:,0].min())
-    x_max = max(Layer[:,:,0].max(), Lipids_of_Interest[:,:,0].max())
-    y_min = min(Layer[:,:,1].min(), Lipids_of_Interest[:,:,1].min())
-    y_max = max(Layer[:,:,1].max(), Lipids_of_Interest[:,:,1].max())
+            # Generate bead xy coordinates
+            bead_coordinates = lipid[:,0:2] + abs(min(x_min,y_min)) ## Get rid of the negatives
+            # Map bead coordinates to grid indices
+            bead_indices = np.apply_along_axis(Membrane.map_to_grid, 1, bead_coordinates, grid_width, grid_height, grid_size)
+            lipid_indexed = np.concatenate((lipid,bead_indices.reshape((len(bead_coordinates),1))), axis=1, dtype=float)
 
-    for ff in range(len(Lipids_of_Interest)):
-        data = Lipids_of_Interest[ff]
-        upper_test = Layer[ff]
-        # Define grid dimensions
-        side_length = 18
-        grid_width = grid_height = side_length 
+            ## Repeat with the PO4 beads 
 
-        ## Grid Size = The number of grid squares along one axis.
-        grid_size = max(x_max - x_min, y_max - y_min) // side_length ## Choose maximum to cover all possible squares.
+            # Generate bead xy coordinates
+            bead_coordinates = layer[:,0:2] + abs(min(x_min,y_min)) ## Get rid of the negatives
+            # Map bead coordinates to grid indices
+            bead_indices = np.apply_along_axis(Membrane.map_to_grid, 1, bead_coordinates, grid_width, grid_height, grid_size)
+            layer_indexed = np.concatenate((layer,bead_indices.reshape((len(bead_coordinates),1))), axis=1, dtype=float)
 
-        # Generate bead xy coordinates
-        bead_coordinates = data[:,0:2] + abs(min(x_min,y_min)) ## Get rid of the negatives
+            n_grid_squares = int(grid_size**2) ## Number of grid squares
+            lipids_count = np.zeros((n_grid_squares,1))
+            zdev_list = np.zeros((n_grid_squares,1))
+            zmean = layer_indexed[:,2].mean()
+            for i in range(n_grid_squares):
+                data_to_analyse = lipid_indexed[np.where(layer_indexed[:,4] == i)]
+                if len(data_to_analyse) == 0:
+                    continue
+                ## Count the number of the lipid molecules of interest
+                lipids_count[i] += len(data_to_analyse)
+                ## Calculate how much the average z position of the patch deviates from the average membrane position.
+                z_positions = layer_indexed[np.where(layer_indexed[:,4] == i)][:,2]
+                if len(z_positions) == 0:
+                    continue
+                ## If there is no PO4 bead in the grid square; assume no difference.
+                zdev = z_positions.mean() - zmean
+                zdev_list[i] += zdev
+            ## Normalise
 
-        # Map bead coordinates to grid indices
-        bead_indices = np.apply_along_axis(map_to_grid, 1, bead_coordinates, grid_width, grid_height, grid_size)
+            lip_norm = (lipids_count - lipids_count.mean())/(np.std(lipids_count))
+            z_norm = (zdev_list - zdev_list.mean())/(np.std(zdev_list))
 
-        data_indexed = np.concatenate((data,bead_indices.reshape((len(bead_coordinates),1))), axis=1, dtype=float)
+            ## Cross-Correlation
 
-        ## Repeat with the PO4 beads 
+            xcorr = np.correlate(lip_norm[:,0], z_norm[:,0]) / len(lip_norm)
+            lipids_count_matrix.append(lipids_count)
+            zdev_list_matrix.append(zdev_list)
+            xcorr_matrix.append(xcorr)
 
-        # Generate bead xy coordinates
-        bead_coordinates = upper_test[:,0:2] + abs(min(x_min,y_min)) ## Get rid of the negatives
+        lipids_count_matrix =  np.array(lipids_count_matrix)
+        zdev_list_matrix = np.array(zdev_list_matrix)
+        xcorr_matrix = np.array(xcorr_matrix)
+        return lipids_count_matrix, zdev_list_matrix, xcorr_matrix
 
-        # Map bead coordinates to grid indices
-        bead_indices = np.apply_along_axis(map_to_grid, 1, bead_coordinates, grid_width, grid_height, grid_size)
 
-        upper_indexed = np.concatenate((upper_test,bead_indices.reshape((len(bead_coordinates),1))), axis=1, dtype=float)
+    ### Plot
+    def plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name):
+        Lipids_of_Interest_nclust_rollingav = []
+        for i in range(len(Lipids_of_Interest_nclust)):
+            rollingav = Lipids_of_Interest_nclust[i:i+50].mean()
+            Lipids_of_Interest_nclust_rollingav.append(rollingav)
+        Lipids_of_Interest_nclust_rollingav = np.array(Lipids_of_Interest_nclust_rollingav)
+        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust, color = 'blue')
+        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust_rollingav, color = "cyan")
+        plt.ylabel(f"Number of {name} Clusters")
+        plt.xlabel("Time ($\mu$s)")
+        plt.ylim(0,25)
+        if not os.path.isdir("clust_results"):
+            os.makedirs("clust_results")
+        plt.savefig(f"clust_results/{name}_nclust.png",dpi=300)
+        plt.show()
 
-        n_grid_squares = int(grid_size**2) ## Number of grid squares
-        lipids_count = np.zeros((n_grid_squares,1))
-        zdev_list = np.zeros((n_grid_squares,1))
-        zmean = upper_indexed[:,2].mean()
-        for i in range(n_grid_squares):
-            data_to_analyse = data_indexed[np.where(data_indexed[:,4] == i)]
-            if len(data_to_analyse) == 0:
-                continue
-            ## Count the number of the lipid molecules of interest
-            lipids_count[i] += len(data_to_analyse)
-            ## Calculate how much the average z position of the patch deviates from the average membrane position.
-            z_positions = upper_indexed[np.where(upper_indexed[:,4] == i)][:,2]
-            if len(z_positions) == 0:
-                continue
-            ## If there is no PO4 bead in the grid square; assume no difference.
-            zdev = z_positions.mean() - zmean
-            zdev_list[i] += zdev
-        ## Normalise
+        Lipids_of_Interest_clustsize_rollingav = []
+        for i in range(len(Lipids_of_Interest_clustsize)):
+            rollingav = Lipids_of_Interest_clustsize[i:i+50].mean()
+            Lipids_of_Interest_clustsize_rollingav.append(rollingav)
+        Lipids_of_Interest_clustsize_rollingav = np.array(Lipids_of_Interest_clustsize_rollingav)
 
-        lip_norm = (lipids_count - lipids_count.mean())/(np.std(lipids_count))
-        z_norm = (zdev_list - zdev_list.mean())/(np.std(zdev_list))
+        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize, color = "lime")
+        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize_rollingav, color = "darkgreen")
+        plt.ylabel(f"Average Cluster Size\n(Number of {name} molecules within a cluster)")
+        plt.xlabel("Time ($\mu$s)")
+        plt.ylim(0,120)
+        if not os.path.isdir("clust_results"):
+            os.makedirs("clust_results")
+        plt.savefig(f"clust_results/{name}_clustsize.png",dpi=300)
+        plt.show()
 
-        ## Cross-Correlation
+    ## Cross-correlation between # of lipids and the shift in z of the membrane from the average membrane z (i.e. curvature)
+    # Function to map bead coordinates to grid indices
 
-        xcorr = np.correlate(lip_norm[:,0], z_norm[:,0]) / len(lip_norm)
-        lipids_count_matrix.append(lipids_count)
-        zdev_list_matrix.append(zdev_list)
-        xcorr_matrix.append(xcorr)
+    ### Plot
+    def CCF_plot(xcorr_matrix, name):
+        plt.plot(np.arange(0,10.001,0.001),xcorr_matrix,color='purple')
+        plt.xlabel("Time ($\mu$s)")
+        plt.ylabel(f"Cross-Correlation Coefficient\nbetween $\Delta$z and {name} lipid beads count")
 
-    lipids_count_matrix =  np.array(lipids_count_matrix)
-    zdev_list_matrix = np.array(zdev_list_matrix)
-    xcorr_matrix = np.array(xcorr_matrix)
-    return lipids_count_matrix, zdev_list_matrix, xcorr_matrix
+        CC_rollingav = []
+        for i in range(len(xcorr_matrix)):
+            rollingav = xcorr_matrix[i:i+50].mean()
+            CC_rollingav.append(rollingav)
+        CC_rollingav = np.array(CC_rollingav)
 
-### Plot
-def CCF_plot(xcorr_matrix, name):
-    plt.plot(np.arange(0,10.001,0.001),xcorr_matrix,color='purple')
-    plt.xlabel("Time ($\mu$s)")
-    plt.ylabel(f"Cross-Correlation Coefficient\nbetween $\Delta$z and {name} lipid beads count")
-
-    CC_rollingav = []
-    for i in range(len(xcorr_matrix)):
-        rollingav = xcorr_matrix[i:i+50].mean()
-        CC_rollingav.append(rollingav)
-    CC_rollingav = np.array(CC_rollingav)
-
-    plt.plot(np.arange(0,10.001,0.001), CC_rollingav,color='magenta')
-    plt.ylim(-0.5,0.5)
-    if not os.path.isdir("ccf_results"):
-        os.makedirs("ccf_results")
-    plt.show()
+        plt.plot(np.arange(0,10.001,0.001), CC_rollingav,color='magenta')
+        plt.ylim(-0.5,0.5)
+        if not os.path.isdir("ccf_results"):
+            os.makedirs("ccf_results")
+        plt.show()
 
 
 ## Analysis of Contact with the capsid
