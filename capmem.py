@@ -187,8 +187,28 @@ class Membrane(Timeseries):
         zdev_list_matrix = np.array(zdev_list_matrix)
         xcorr_matrix = np.array(xcorr_matrix)
         return lipids_count_matrix, zdev_list_matrix, xcorr_matrix
+    
+    def run_lipid_position_curvature_xcorr(self):
+        lipids_count_matrix, zdev_list_matrix, xcorr_matrix = self.xcorr()
+        if not os.path.isdir("lipid_xcorr"):
+            os.makedirs("lipid_xcorr")
+        np.savez(f"lipid_xcorr/lipids_count_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", lipids_count_matrix)
+        np.savez(f"lipid_xcorr/zdev_list_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", zdev_list_matrix)
+        np.savez(f"lipid_xcorr/xcorr_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", xcorr_matrix)
+        return None
+    
 
-
+    
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
+############################Construction Site#######################################
+####################################################################################
+####################################################################################
+####################################################################################
+####################################################################################
     ### Plot
     def plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name):
         Lipids_of_Interest_nclust_rollingav = []
