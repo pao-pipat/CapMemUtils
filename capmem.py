@@ -25,16 +25,17 @@ class Membrane(Timeseries):
     def get_layer_reference_phosphates(self):
         ## Implementing LeafletFinder algorithm by Michaud-Agrawal 2011
         u = self.universe
-        L =LeafletFinder(u, select="name PO4", cutoff = optimize_cutoff(u, select="name PO4")[0])
         if self.layer == "upper":
             PO4_ref = []
             for t in u.trajectory:
+                L =LeafletFinder(u, select="name PO4", cutoff = optimize_cutoff(u, select="name PO4")[0])
                 PO4_ref_at_t = np.concatenate([L.groups(0).positions,L.groups(0).residues.resids.reshape(-1,1)], axis = 1)
                 PO4_ref.append(PO4_ref_at_t)
             self.layer_reference_phosphates = np.array(PO4_ref)
         elif self.layer == "lower":
             PO4_ref = []
             for t in u.trajectory:
+                L =LeafletFinder(u, select="name PO4", cutoff = optimize_cutoff(u, select="name PO4")[0])
                 PO4_ref_at_t = np.concatenate([L.groups(1).positions,L.groups(1).residues.resids.reshape(-1,1)], axis = 1)
                 PO4_ref.append(PO4_ref_at_t)
             self.layer_reference_phosphates = np.array(PO4_ref)
@@ -198,7 +199,7 @@ class Membrane(Timeseries):
         return None
     
 
-    
+
 ####################################################################################
 ####################################################################################
 ####################################################################################
