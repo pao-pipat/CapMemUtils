@@ -2,45 +2,185 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
 from timeseries import *
-from MDAnalysis.analysis.leaflet import LeafletFinder, optimize_cutoff
+from scipy.optimize import curve_fit
 import os
 
 class Protein(Timeseries):
-    def __init__(self, selection, prefix_path):
-        super().__init__(selection, prefix_path)
+    def __init__(self, selection, path_gro, path_xtc):
+        super().__init__(selection, path_gro, path_xtc)
 
 
 class Membrane(Timeseries):
-    def __init__(self, selection, prefix_path, name, repeat, layer):
-        super().__init__(selection, prefix_path)
-        self.name = name
+
+    martini_lipids = [
+        "DAPC",
+        "DBPC",
+        "DFPC",
+        "DGPC",
+        "DIPC",
+        "DLPC",
+        "DNPC",
+        "DOPC",
+        "DPPC",
+        "DRPC",
+        "DTPC",
+        "DVPC",
+        "DXPC",
+        "DYPC",
+        "LPPC",
+        "PAPC",
+        "PEPC",
+        "PGPC",
+        "PIPC",
+        "POPC",
+        "PRPC",
+        "PUPC",
+        "DAPE",
+        "DBPE",
+        "DFPE",
+        "DGPE",
+        "DIPE",
+        "DLPE",
+        "DNPE",
+        "DOPE",
+        "DPPE",
+        "DRPE",
+        "DTPE",
+        "DUPE",
+        "DVPE",
+        "DXPE",
+        "DYPE",
+        "LPPE",
+        "PAPE",
+        "PGPE",
+        "PIPE",
+        "POPE",
+        "PQPE",
+        "PRPE",
+        "PUPE",
+        "DAPS",
+        "DBPS",
+        "DFPS",
+        "DGPS",
+        "DIPS",
+        "DLPS",
+        "DNPS",
+        "DOPS",
+        "DPPS",
+        "DRPS",
+        "DTPS",
+        "DUPS",
+        "DVPS",
+        "DXPS",
+        "DYPS",
+        "LPPS",
+        "PAPS",
+        "PGPS",
+        "PIPS",
+        "POPS",
+        "PQPS",
+        "PRPS",
+        "PUPS",
+        "DAPA",
+        "DBPA",
+        "DFPA",
+        "DGPA",
+        "DIPA",
+        "DLPA",
+        "DNPA",
+        "DOPA",
+        "DPPA",
+        "DRPA",
+        "DTPA",
+        "DVPA",
+        "DXPA",
+        "DYPA",
+        "LPPA",
+        "PAPA",
+        "PGPA",
+        "PIPA",
+        "POPA",
+        "PRPA",
+        "PUPA",
+        "DAPG",
+        "DBPG",
+        "DFPG",
+        "DGPG",
+        "DIPG",
+        "DLPG",
+        "DNPG",
+        "DOPG",
+        "DPPG",
+        "DRPG",
+        "DTPG",
+        "DVPG",
+        "DXPG",
+        "DYPG",
+        "LPPG",
+        "PAPG",
+        "PGPG",
+        "PIPG",
+        "POPG",
+        "PRPG",
+        "PIP2"
+    ]
+    upper_start = np.NaN
+    upper_end = np.NaN
+    lower_start = np.NaN
+    lower_end = np.NaN
+
+    def __init__(self, selection, path_gro, path_xtc, repeat, layer):
+        #### Need to restrict selection to only MATINI lipid beads ####
+        if self.selection.strip("resname ") not in Membrane.martini_lipids:
+            raise ValueError("Invalid names entered. Maybe the lipid is not in the Martini Database? Please try again with e.g. 'resname POPC'")
+        super().__init__(selection, path_gro, path_xtc)
+        self.path_gro = path_gro
+        self.path_xtc = path_xtc
         if isinstance(repeat, int) == False:
             raise ValueError("Number of repeat can only be an integer.")
-        self.repeat = repeat
+        self.repeat = repeat ## This is solely for bookkeeping purposes.
         if layer not in ["upper", "lower"]:
             raise ValueError("Sorry, value for lipid bilayer can only be 'upper' or 'lower'.")
         self.layer = layer
-        self.data = self.assemble_timeseries_array()
+        ## Note that the membrane timeseries is not assembled yet.
+    
+    @classmethod
+    def get_membrane_layer_indices(self):
+        u = self.universe
+        ### Assuming no water in the processed gro and xtc files.
+        ### Find the easiest pieces of information first..
+        Membrane.upper_start = u.select_atoms("not protein").resids[0]
+        Membrane.lower_end = u.select_atoms("not protein").resids[-1]
+        ### Now find where the two leaflets are separated.
+
+        return None
+    
+    def assemble_timeseries_membrane(self):
+        if self.layer == "upper":
+            self.selection = self.selection + f" and resid {Membrane.upper_start}:{Membrane.upper_end}"
+            self.assemble_timeseries_array()
+        if self.layer == "lower":
+            self.selection = self.selection + f" and resid {Membrane.lower_start}:{Membrane.lower_end}"
+            self.assemble_timeseries_array()
+        return None
     
     def get_layer_reference_phosphates(self):
         ## Implementing LeafletFinder algorithm by Michaud-Agrawal 2011
         u = self.universe
         if self.layer == "upper":
-            PO4_ref = []
-            for t in u.trajectory:
-                L =LeafletFinder(u, select="name PO4", cutoff = optimize_cutoff(u, select="name PO4")[0])
-                PO4_ref_at_t = np.concatenate([L.groups(0).positions,L.groups(0).residues.resids.reshape(-1,1)], axis = 1)
-                PO4_ref.append(PO4_ref_at_t)
+            PO4_ref = Membrane(selection = f"name PO4", path_gro = self.path_gro, 
+                                    path_xtc = self.path_xtc, repeat = self.repeat, layer = self.layer)
+            PO4_ref.assemble_timeseries_membrane()
             self.layer_reference_phosphates = np.array(PO4_ref)
+        
         elif self.layer == "lower":
-            PO4_ref = []
-            for t in u.trajectory:
-                L =LeafletFinder(u, select="name PO4", cutoff = optimize_cutoff(u, select="name PO4")[0])
-                PO4_ref_at_t = np.concatenate([L.groups(1).positions,L.groups(1).residues.resids.reshape(-1,1)], axis = 1)
-                PO4_ref.append(PO4_ref_at_t)
+            PO4_ref = Membrane(selection = f"name PO4", path_gro = self.path_gro, 
+                                    path_xtc = self.path_xtc, repeat = self.repeat, layer = self.layer)
+            PO4_ref.assemble_timeseries_membrane()
             self.layer_reference_phosphates = np.array(PO4_ref)
         return None
-    
+        
+
     ############ Cluster Analysis ############
     ############ Cluster Analysis ############
     ############ Cluster Analysis ############
@@ -198,6 +338,25 @@ class Membrane(Timeseries):
         np.savez(f"lipid_xcorr/xcorr_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", xcorr_matrix)
         return None
     
+    ############ Curvature Analysis ############
+    ############ Curvature Analysis ############
+    ############ Curvature Analysis ############
+    ############ Curvature Analysis ############
+    ############ Curvature Analysis ############
+    
+    def func_to_opt(self, a, b, c, d, e, f, g, h):
+        x = self.data[:,0]
+        y = self.data[:,1]
+        return np.array([a + b*(x) + c*(x**2) + d*(y) + e*x*y + f*(y**2) + g*(x**3) + h*(y**3)]).T[:,0]
+
+    def get_curvature(self, params):
+        x = self.data[:,0]
+        y = self.data[:,1]
+        a, b, c, d, e, f, g, h = params
+        k_x = np.absolute(2*c + 6*g*x) / ((np.sqrt(1+(b +2*c*x + e*y + 3*g*x**2)**2))**3)
+        k_y = np.absolute(2*f + 6*h*y) / ((np.sqrt(1+(d + e*x + 2*f*y + 3*h*y**2)**2))**3)
+        K = k_x * k_y
+        return K
 
 
 ####################################################################################
@@ -407,34 +566,3 @@ def plot_timeseries(lipid, leaflet, name):
         os.makedirs("lipid_2d")
     plt.savefig(f"lipid_2d/{name}_ts.png",dpi=300)
     plt.show()
-
-def main(eps, ms, Lipids_of_Interest, name, Layer, capsid):
-    eps_a = eps
-    ms_a = ms
-    Lipids_of_Interest = Lipids_of_Interest
-    name = str(name)
-    Layer = Layer
-    capsid = capsid
-    Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize = clust_ts(Lipids_of_Interest,eps_b=eps_a,ms_b=ms_a)
-    plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name)
-    lipids_count_matrix, zdev_list_matrix, xcorr_matrix = xcorr(Layer,Lipids_of_Interest)
-    CCF_plot(xcorr_matrix, name)
-    capsid_lipid_contact_array_ts, capsid_lipid_contact_freq = capsid_lipid_contact(capsid, Lipids_of_Interest,cutoff=10)
-    plot_capsid_lipid(capsid_lipid_contact_freq, name)
-    
-def main_clust(eps, ms, Lipids_of_Interest, name, Layer):
-    eps_a = eps
-    ms_a = ms
-    Lipids_of_Interest = Lipids_of_Interest
-    name = str(name)
-    Layer = Layer
-    Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize = clust_ts(Lipids_of_Interest,eps_b=eps_a,ms_b=ms_a)
-    plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name)
-    lipids_count_matrix, zdev_list_matrix, xcorr_matrix = xcorr(Layer,Lipids_of_Interest)
-    CCF_plot(xcorr_matrix, name)
-    return Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize, lipids_count_matrix, zdev_list_matrix, xcorr_matrix
-
-def main_capsid_interaction(Lipids_of_Interest, capsid, name):
-    capsid_lipid_contact_array_ts, capsid_lipid_contact_freq = capsid_lipid_contact(capsid, Lipids_of_Interest,cutoff=10)
-    return capsid_lipid_contact_array_ts, capsid_lipid_contact_freq
-
