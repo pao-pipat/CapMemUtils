@@ -129,7 +129,7 @@ class Membrane(Timeseries):
     lower_start = np.NaN
     lower_end = np.NaN
 
-    def __init__(self, selection, path_gro, path_xtc, repeat, layer):
+    def __init__(self, selection, path_gro, path_xtc, repeat, layer, num_lipid_residues_upper, num_lipid_residues_lower):
         #### Need to restrict selection to only MATINI lipid beads ####
         if self.selection.strip("resname ") not in Membrane.martini_lipids:
             raise ValueError("Invalid names entered. Maybe the lipid is not in the Martini Database? Please try again with e.g. 'resname POPC'")
@@ -142,6 +142,12 @@ class Membrane(Timeseries):
         if layer not in ["upper", "lower"]:
             raise ValueError("Sorry, value for lipid bilayer can only be 'upper' or 'lower'.")
         self.layer = layer
+        if isinstance(num_lipid_residues_upper, int) == False:
+            raise ValueError("Number of lipid residues in the upper leaflet can only be an integer.")
+        if isinstance(num_lipid_residues_lower, int) == False:
+            raise ValueError("Number of lipid residues in the lower leaflet can only be an integer.")
+        self.num_lipid_residues_upper = num_lipid_residues_upper
+        self.num_lipid_residues_lower = num_lipid_residues_lower
         ## Note that the membrane timeseries is not assembled yet.
     
     @classmethod
@@ -151,8 +157,8 @@ class Membrane(Timeseries):
         ### Find the easiest pieces of information first..
         Membrane.upper_start = u.select_atoms("not protein").resids[0]
         Membrane.lower_end = u.select_atoms("not protein").resids[-1]
-        ### Now find where the two leaflets are separated.
-
+        Membrane.upper_end = Membrane.upper_start + self.num_lipid_residues_upper - 1 # Subtract 1 Because MDAnalysis selection is inclusive on both ends
+        Membrane.lower_start = Membrane.upper_end +  1
         return None
     
     def assemble_timeseries_membrane(self):
@@ -165,7 +171,6 @@ class Membrane(Timeseries):
         return None
     
     def get_layer_reference_phosphates(self):
-        ## Implementing LeafletFinder algorithm by Michaud-Agrawal 2011
         u = self.universe
         if self.layer == "upper":
             PO4_ref = Membrane(selection = f"name PO4", path_gro = self.path_gro, 
