@@ -1,0 +1,8 @@
+LICENSE
+README.md
+setup.py
+capmemutils.egg-info/PKG-INFO
+capmemutils.egg-info/SOURCES.txt
+capmemutils.egg-info/dependency_links.txt
+capmemutils.egg-info/requires.txt
+capmemutils.egg-info/top_level.txt

@@ -132,9 +132,9 @@ class Membrane(Timeseries):
 
     def __init__(self, selection, path_gro, path_xtc, repeat, layer, num_lipid_residues_upper, num_lipid_residues_lower):
         #### Need to restrict selection to only MATINI lipid beads ####
-        if not re.match(r'resname ' + '[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]', self.selection):
+        if not re.match(r'resname ' + '[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]', selection):
             raise ValueError("Error! pattern is not recognised. Make sure you use e.g., selection='resname POPC'")
-        if self.selection.strip("resname ") not in Membrane.martini_lipids:
+        if selection.strip("resname ") not in Membrane.martini_lipids:
             raise ValueError("Invalid names entered. Maybe the lipid is not in the Martini Database? Please try again with e.g. 'resname POPC'")
         super().__init__(selection, path_gro, path_xtc)
         self.path_gro = path_gro
@@ -153,13 +153,11 @@ class Membrane(Timeseries):
         self.num_lipid_residues_lower = num_lipid_residues_lower
         ## Note that the membrane timeseries is not assembled yet.
     
-    @classmethod
     def get_membrane_layer_indices(self):
-        u = self.universe
         ### Assuming no water in the processed gro and xtc files.
         ### Find the easiest pieces of information first..
-        Membrane.upper_start = u.select_atoms("not protein").resids[0]
-        Membrane.lower_end = u.select_atoms("not protein").resids[-1]
+        Membrane.upper_start = self.universe.select_atoms("not protein").resids[0]
+        Membrane.lower_end = self.universe.select_atoms("not protein").resids[-1]
         Membrane.upper_end = Membrane.upper_start + self.num_lipid_residues_upper - 1 # Subtract 1 Because MDAnalysis selection is inclusive on both ends
         Membrane.lower_start = Membrane.upper_end +  1
         return None
@@ -174,18 +172,17 @@ class Membrane(Timeseries):
         return None
     
     def get_layer_reference_phosphates(self):
-        u = self.universe
         if self.layer == "upper":
-            PO4_ref = Membrane(selection = f"name PO4", path_gro = self.path_gro, 
-                                    path_xtc = self.path_xtc, repeat = self.repeat, layer = self.layer)
-            PO4_ref.assemble_timeseries_membrane()
-            self.layer_reference_phosphates = np.array(PO4_ref)
+            PO4_ref = Timeseries(selection = f"name PO4 and resid {Membrane.upper_start}:{Membrane.upper_end}", path_gro = self.path_gro, 
+                                    path_xtc = self.path_xtc)
+            PO4_ref.assemble_timeseries_array()
+            self.layer_reference_phosphates = PO4_ref.data
         
         elif self.layer == "lower":
-            PO4_ref = Membrane(selection = f"name PO4", path_gro = self.path_gro, 
-                                    path_xtc = self.path_xtc, repeat = self.repeat, layer = self.layer)
-            PO4_ref.assemble_timeseries_membrane()
-            self.layer_reference_phosphates = np.array(PO4_ref)
+            PO4_ref = Timeseries(selection = f"name PO4 and resid {Membrane.lower_start}:{Membrane.lower_end}", path_gro = self.path_gro, 
+                                    path_xtc = self.path_xtc)
+            PO4_ref.assemble_timeseries_array()
+            self.layer_reference_phosphates = PO4_ref.data
         return None
     
     def acquire_membrane_data(self):
