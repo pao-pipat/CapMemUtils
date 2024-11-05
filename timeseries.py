@@ -20,7 +20,6 @@ Distance calculation functions are based on scipy cdist or numba (the latter is 
 class Timeseries:
     def __init__(self, selection: str, path_gro: str, path_xtc: str):
         self.selection = selection
-        self.prefix_path = prefix_path
         self.universe = mda.Universe(path_gro, path_xtc)
         self.data = np.array([])
 

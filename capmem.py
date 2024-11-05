@@ -184,8 +184,13 @@ class Membrane(Timeseries):
             PO4_ref.assemble_timeseries_membrane()
             self.layer_reference_phosphates = np.array(PO4_ref)
         return None
+    
+    def acquire_membrane_data(self):
+        self.get_membrane_layer_indices()
+        self.get_layer_reference_phosphates()
+        self.assemble_timeseries_membrane()
+        return None
         
-
     ############ Cluster Analysis ############
     ############ Cluster Analysis ############
     ############ Cluster Analysis ############
