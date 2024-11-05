@@ -4,6 +4,7 @@ from sklearn.cluster import DBSCAN
 from timeseries import *
 from scipy.optimize import curve_fit
 import os
+import re
 
 class Protein(Timeseries):
     def __init__(self, selection, path_gro, path_xtc):
@@ -131,6 +132,8 @@ class Membrane(Timeseries):
 
     def __init__(self, selection, path_gro, path_xtc, repeat, layer, num_lipid_residues_upper, num_lipid_residues_lower):
         #### Need to restrict selection to only MATINI lipid beads ####
+        if not re.match(r'resname ' + '[A-Za-z0-9][A-Za-z0-9][A-Za-z0-9][A-Za-z0-9]', self.selection):
+            raise ValueError("Error! pattern is not recognised. Make sure you use e.g., selection='resname POPC'")
         if self.selection.strip("resname ") not in Membrane.martini_lipids:
             raise ValueError("Invalid names entered. Maybe the lipid is not in the Martini Database? Please try again with e.g. 'resname POPC'")
         super().__init__(selection, path_gro, path_xtc)
