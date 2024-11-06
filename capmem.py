@@ -250,11 +250,12 @@ class Membrane(Timeseries):
         return Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize
     
     def run_cluster_dbscan(self, eps, ms, exclude_noise = True):
+        name = self.selection.strip("resname ")[0:4]
         Lipids_of_Interest_nclust, Lipids_of_Interest_clustsize = self.clust_ts(eps, ms, exclude_noise = exclude_noise)
         if not os.path.isdir("lipid_clusters"):
             os.makedirs("lipid_clusters")
-        np.savez(f"lipid_clusters/nclust_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", Lipids_of_Interest_nclust)
-        np.savez(f"lipid_clusters/clustsize_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", Lipids_of_Interest_clustsize)
+        np.savez(f"lipid_clusters/nclust_repeat{self.repeat}_{name}_layer{self.layer}.npz", Lipids_of_Interest_nclust)
+        np.savez(f"lipid_clusters/clustsize_repeat{self.repeat}_{name}_layer{self.layer}.npz", Lipids_of_Interest_clustsize)
         return None
     
     ############ Xcorr Analysis ############
@@ -340,12 +341,13 @@ class Membrane(Timeseries):
         return lipids_count_matrix, zdev_list_matrix, xcorr_matrix
     
     def run_lipid_position_curvature_xcorr(self):
+        name = self.selection.strip("resname ")[0:4]
         lipids_count_matrix, zdev_list_matrix, xcorr_matrix = self.xcorr()
         if not os.path.isdir("lipid_xcorr"):
             os.makedirs("lipid_xcorr")
-        np.savez(f"lipid_xcorr/lipids_count_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", lipids_count_matrix)
-        np.savez(f"lipid_xcorr/zdev_list_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", zdev_list_matrix)
-        np.savez(f"lipid_xcorr/xcorr_matrix_repeat{self.repeat}_{self.name}_layer{self.layer}.npz", xcorr_matrix)
+        np.savez(f"lipid_xcorr/lipids_count_matrix_repeat{self.repeat}_{name}_layer{self.layer}.npz", lipids_count_matrix)
+        np.savez(f"lipid_xcorr/zdev_list_matrix_repeat{self.repeat}_{name}_layer{self.layer}.npz", zdev_list_matrix)
+        np.savez(f"lipid_xcorr/xcorr_matrix_repeat{self.repeat}_{name}_layer{self.layer}.npz", xcorr_matrix)
         return None
     
     ############ Curvature Analysis ############
@@ -353,21 +355,37 @@ class Membrane(Timeseries):
     ############ Curvature Analysis ############
     ############ Curvature Analysis ############
     ############ Curvature Analysis ############
-    
-    def func_to_opt(self, a, b, c, d, e, f, g, h):
-        x = self.data[:,0]
-        y = self.data[:,1]
-        return np.array([a + b*(x) + c*(x**2) + d*(y) + e*x*y + f*(y**2) + g*(x**3) + h*(y**3)]).T[:,0]
 
-    def get_curvature(self, params):
-        x = self.data[:,0]
-        y = self.data[:,1]
+    @staticmethod
+    def func_to_opt(X, a, b, c, d, e, f, g, h):
+        x, y = X
+        return a + b*(x) + c*(x**2) + d*(y) + e*x*y + f*(y**2) + g*(x**3) + h*(y**3)
+    
+    @staticmethod
+    def get_curvature(x, y, params):
         a, b, c, d, e, f, g, h = params
         k_x = np.absolute(2*c + 6*g*x) / ((np.sqrt(1+(b +2*c*x + e*y + 3*g*x**2)**2))**3)
         k_y = np.absolute(2*f + 6*h*y) / ((np.sqrt(1+(d + e*x + 2*f*y + 3*h*y**2)**2))**3)
-        K = k_x * k_y
+        K = k_x * k_y # Gaussian Curvature
         return K
-
+    
+    def run_gaussian_curvature(self):
+        K_series = np.zeros(len(self.data))
+        pcov_series = []
+        for t in range(len(self.data)):
+            x = self.layer_reference_phosphates[t,:,0]
+            y = self.layer_reference_phosphates[t,:,1]
+            z = self.layer_reference_phosphates[t,:,2]
+            guess = (1,1,1,1,1,1,1,1)
+            params, pcov = curve_fit(Membrane.func_to_opt, xdata = [x, y], ydata = z, p0 = guess)
+            pcov_series.append(pcov)
+            K = Membrane.get_curvature(x = x, y = y, params = params)
+            K_series[t] += K.mean()
+        if not os.path.isdir("lipid_curvature"):
+            os.makedirs("lipid_curvature")
+        np.savez(f"lipid_curvature/lipid_curvature_repeat{self.repeat}_layer{self.layer}.npz", K_series)
+        np.savez(f"lipid_curvature/lipid_curvature_repeat{self.repeat}_layer{self.layer}_pcov.npz", pcov_series)
+        return None
 
 ####################################################################################
 ####################################################################################
@@ -379,59 +397,129 @@ class Membrane(Timeseries):
 ####################################################################################
 ####################################################################################
 ####################################################################################
-    ### Plot
-    def plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name):
-        Lipids_of_Interest_nclust_rollingav = []
-        for i in range(len(Lipids_of_Interest_nclust)):
-            rollingav = Lipids_of_Interest_nclust[i:i+50].mean()
-            Lipids_of_Interest_nclust_rollingav.append(rollingav)
-        Lipids_of_Interest_nclust_rollingav = np.array(Lipids_of_Interest_nclust_rollingav)
-        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust, color = 'blue')
-        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust_rollingav, color = "cyan")
-        plt.ylabel(f"Number of {name} Clusters")
-        plt.xlabel("Time ($\mu$s)")
-        plt.ylim(0,25)
-        if not os.path.isdir("clust_results"):
-            os.makedirs("clust_results")
-        plt.savefig(f"clust_results/{name}_nclust.png",dpi=300)
-        plt.show()
+    ### These are templates for Plotting - deprecated
+    # def plot_clust(Lipids_of_Interest_nclust,Lipids_of_Interest_clustsize, name):
+    #     Lipids_of_Interest_nclust_rollingav = []
+    #     for i in range(len(Lipids_of_Interest_nclust)):
+    #         rollingav = Lipids_of_Interest_nclust[i:i+50].mean()
+    #         Lipids_of_Interest_nclust_rollingav.append(rollingav)
+    #     Lipids_of_Interest_nclust_rollingav = np.array(Lipids_of_Interest_nclust_rollingav)
+    #     plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust, color = 'blue')
+    #     plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_nclust_rollingav, color = "cyan")
+    #     plt.ylabel(f"Number of {name} Clusters")
+    #     plt.xlabel("Time ($\mu$s)")
+    #     plt.ylim(0,25)
+    #     if not os.path.isdir("clust_results"):
+    #         os.makedirs("clust_results")
+    #     plt.savefig(f"clust_results/{name}_nclust.png",dpi=300)
+    #     plt.show()
 
-        Lipids_of_Interest_clustsize_rollingav = []
-        for i in range(len(Lipids_of_Interest_clustsize)):
-            rollingav = Lipids_of_Interest_clustsize[i:i+50].mean()
-            Lipids_of_Interest_clustsize_rollingav.append(rollingav)
-        Lipids_of_Interest_clustsize_rollingav = np.array(Lipids_of_Interest_clustsize_rollingav)
+    #     Lipids_of_Interest_clustsize_rollingav = []
+    #     for i in range(len(Lipids_of_Interest_clustsize)):
+    #         rollingav = Lipids_of_Interest_clustsize[i:i+50].mean()
+    #         Lipids_of_Interest_clustsize_rollingav.append(rollingav)
+    #     Lipids_of_Interest_clustsize_rollingav = np.array(Lipids_of_Interest_clustsize_rollingav)
 
-        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize, color = "lime")
-        plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize_rollingav, color = "darkgreen")
-        plt.ylabel(f"Average Cluster Size\n(Number of {name} molecules within a cluster)")
-        plt.xlabel("Time ($\mu$s)")
-        plt.ylim(0,120)
-        if not os.path.isdir("clust_results"):
-            os.makedirs("clust_results")
-        plt.savefig(f"clust_results/{name}_clustsize.png",dpi=300)
-        plt.show()
+    #     plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize, color = "lime")
+    #     plt.plot(np.arange(0,10.001,0.001),Lipids_of_Interest_clustsize_rollingav, color = "darkgreen")
+    #     plt.ylabel(f"Average Cluster Size\n(Number of {name} molecules within a cluster)")
+    #     plt.xlabel("Time ($\mu$s)")
+    #     plt.ylim(0,120)
+    #     if not os.path.isdir("clust_results"):
+    #         os.makedirs("clust_results")
+    #     plt.savefig(f"clust_results/{name}_clustsize.png",dpi=300)
+    #     plt.show()
 
-    ## Cross-correlation between # of lipids and the shift in z of the membrane from the average membrane z (i.e. curvature)
-    # Function to map bead coordinates to grid indices
+    # ## Cross-correlation between # of lipids and the shift in z of the membrane from the average membrane z (i.e. curvature)
+    # # Function to map bead coordinates to grid indices
 
-    ### Plot
-    def CCF_plot(xcorr_matrix, name):
-        plt.plot(np.arange(0,10.001,0.001),xcorr_matrix,color='purple')
-        plt.xlabel("Time ($\mu$s)")
-        plt.ylabel(f"Cross-Correlation Coefficient\nbetween $\Delta$z and {name} lipid beads count")
+    # ### Plot
+    # def CCF_plot(xcorr_matrix, name):
+    #     plt.plot(np.arange(0,10.001,0.001),xcorr_matrix,color='purple')
+    #     plt.xlabel("Time ($\mu$s)")
+    #     plt.ylabel(f"Cross-Correlation Coefficient\nbetween $\Delta$z and {name} lipid beads count")
 
-        CC_rollingav = []
-        for i in range(len(xcorr_matrix)):
-            rollingav = xcorr_matrix[i:i+50].mean()
-            CC_rollingav.append(rollingav)
-        CC_rollingav = np.array(CC_rollingav)
+    #     CC_rollingav = []
+    #     for i in range(len(xcorr_matrix)):
+    #         rollingav = xcorr_matrix[i:i+50].mean()
+    #         CC_rollingav.append(rollingav)
+    #     CC_rollingav = np.array(CC_rollingav)
 
-        plt.plot(np.arange(0,10.001,0.001), CC_rollingav,color='magenta')
-        plt.ylim(-0.5,0.5)
-        if not os.path.isdir("ccf_results"):
-            os.makedirs("ccf_results")
-        plt.show()
+    #     plt.plot(np.arange(0,10.001,0.001), CC_rollingav,color='magenta')
+    #     plt.ylim(-0.5,0.5)
+    #     if not os.path.isdir("ccf_results"):
+    #         os.makedirs("ccf_results")
+    #     plt.show()
+    ## Plot
+    ## Only works with 2 pentamers
+    # def plot_capsid_lipid(capsid_lipid_contact_freq, name):
+    #     plt.figure(figsize=(10,7))
+    #     plt.plot(np.arange(15511,len(capsid_lipid_contact_freq)+15511,1), capsid_lipid_contact_freq[:], color='b')
+    #     plt.ylabel(f"Number of contacts with {name}")
+    #     for i in range(30,40):
+    #         plt.axvspan(43+i*517, 49+i*517, zorder=0, alpha=0.2, color='orange', label='VR-I')
+    #         plt.axvspan(107+i*517, 111+i*517, zorder=0, alpha=0.2, color='red', label='VR-II')
+    #         plt.axvspan(161+i*517, 169+i*517, zorder=0, alpha=0.2, color='pink', label='VR-III')
+    #         plt.axvspan(230+i*517, 249+i*517, zorder=0, alpha=0.2, color='lime', label='VR-IV')
+    #         plt.axvspan(268+i*517, 285+i*517, zorder=0, alpha=0.2, color='blue', label='VR-V')
+    #         plt.axvspan(306+i*517, 322+i*517, zorder=0, alpha=0.2, color='magenta', label='VR-VI')
+    #         plt.axvspan(325+i*517, 337+i*517, zorder=0, alpha=0.2, color='violet', label='VR-VII')
+    #         plt.axvspan(360+i*517, 375+i*517, zorder=0, alpha=0.2, color='yellow', label='VR-VIII')
+    #         plt.axvspan(485+i*517, 492+i*517, zorder=0, alpha=0.2, color='grey', label='VR-IX')
+    #     plt.legend(['Frequency','VR-I','VR-II','VR-III','VR-IV','VR-V','VR-VI','VR-VII','VR-VIII','VR-IX'])
+    #     plt.axvline(x=18096, color = 'k', linestyle='--')
+    #     plt.text(x=16096,y=3500,s='capsomers 30-35',fontsize=16)
+    #     plt.text(x=19096,y=3500,s='capsomers 35-40',fontsize=16)
+    #     plt.xlabel("Capsid Residue")
+    #     plt.ylim(0,7000)
+    #     if not os.path.isdir("capsidlipidint_results"):
+    #         os.makedirs("capsidlipidint_results")
+    #     plt.savefig(f"capsidlipidint_results/{name}_capsid.png",dpi=300)
+
+    # ## For Lipid Time Series Distribution
+
+    # def plot_timeseries(lipid, leaflet, name):
+
+    #     colordict = {'dpg3': 'purple',
+    #              'popcupper': 'darkgrey',
+    #              'popeupper': 'grey',
+    #              'dopcupper': 'green',
+    #              'dopeupper': 'bisque',
+    #              'cholupper': 'cyan',
+    #              'pops': 'tan',
+    #              'dops': 'lime',
+    #              'pop2': 'pink',
+    #              'popclower': 'darkgrey',
+    #              'popelower': 'grey',
+    #              'dopclower': 'green',
+    #              'dopelower': 'bisque',
+    #              'chollower': 'cyan'}
+        
+    #     fig, axs = plt.subplots(7, figsize=(8,45))
+    #     timestamps = [0, 100, 1000, 2000, 4000, 8000, 10000]
+    #     lipid_data = lipid
+    #     leaflet_data = leaflet
+    #     for i in range(len(timestamps)):
+    #         ff = timestamps[i]
+    #         data = lipid_data[ff]
+    #         leaflet_ = leaflet_data[ff]
+    #         x_data = data[:,0]
+    #         y_data = data[:,1]
+    #         x_leaflet_ = leaflet_[:,0]
+    #         y_leaflet_ = leaflet_[:,1]
+    #         z_leaflet_ = leaflet_[:,2]
+    #         axs[i].scatter(x_data, y_data, color=colordict[str(name)], s=10, edgecolors= "black", linewidths=0.2, zorder=10)
+    #         g = axs[i].tricontourf(x_leaflet_,y_leaflet_,z_leaflet_, vmin=70, vmax=360, zorder=5)
+    #         axs[i].set_xlabel("X ($\AA$)")
+    #         axs[i].set_ylabel("Y ($\AA$)")
+    #         plt.colorbar(g, label= "z-height ($\AA$)")
+    #         axs[i].set_title(f"{ff} ns")
+    #     fig.tight_layout()
+    #     if not os.path.isdir("lipid_2d"):
+    #         os.makedirs("lipid_2d")
+    #     plt.savefig(f"lipid_2d/{name}_ts.png",dpi=300)
+    #     plt.show()
+
 
 
 ## Analysis of Contact with the capsid
@@ -507,72 +595,3 @@ def read_dat_as_occupancy(file_path):
         occupancy_list = np.array(occupancy_list)
         occupancy_list = occupancy_list / 99
         return occupancy_list
-## Plot
-## Only works with 2 pentamers
-def plot_capsid_lipid(capsid_lipid_contact_freq, name):
-    plt.figure(figsize=(10,7))
-    plt.plot(np.arange(15511,len(capsid_lipid_contact_freq)+15511,1), capsid_lipid_contact_freq[:], color='b')
-    plt.ylabel(f"Number of contacts with {name}")
-    for i in range(30,40):
-        plt.axvspan(43+i*517, 49+i*517, zorder=0, alpha=0.2, color='orange', label='VR-I')
-        plt.axvspan(107+i*517, 111+i*517, zorder=0, alpha=0.2, color='red', label='VR-II')
-        plt.axvspan(161+i*517, 169+i*517, zorder=0, alpha=0.2, color='pink', label='VR-III')
-        plt.axvspan(230+i*517, 249+i*517, zorder=0, alpha=0.2, color='lime', label='VR-IV')
-        plt.axvspan(268+i*517, 285+i*517, zorder=0, alpha=0.2, color='blue', label='VR-V')
-        plt.axvspan(306+i*517, 322+i*517, zorder=0, alpha=0.2, color='magenta', label='VR-VI')
-        plt.axvspan(325+i*517, 337+i*517, zorder=0, alpha=0.2, color='violet', label='VR-VII')
-        plt.axvspan(360+i*517, 375+i*517, zorder=0, alpha=0.2, color='yellow', label='VR-VIII')
-        plt.axvspan(485+i*517, 492+i*517, zorder=0, alpha=0.2, color='grey', label='VR-IX')
-    plt.legend(['Frequency','VR-I','VR-II','VR-III','VR-IV','VR-V','VR-VI','VR-VII','VR-VIII','VR-IX'])
-    plt.axvline(x=18096, color = 'k', linestyle='--')
-    plt.text(x=16096,y=3500,s='capsomers 30-35',fontsize=16)
-    plt.text(x=19096,y=3500,s='capsomers 35-40',fontsize=16)
-    plt.xlabel("Capsid Residue")
-    plt.ylim(0,7000)
-    if not os.path.isdir("capsidlipidint_results"):
-        os.makedirs("capsidlipidint_results")
-    plt.savefig(f"capsidlipidint_results/{name}_capsid.png",dpi=300)
-
-## For Lipid Time Series Distribution
-
-def plot_timeseries(lipid, leaflet, name):
-
-    colordict = {'dpg3': 'purple',
-             'popcupper': 'darkgrey',
-             'popeupper': 'grey',
-             'dopcupper': 'green',
-             'dopeupper': 'bisque',
-             'cholupper': 'cyan',
-             'pops': 'tan',
-             'dops': 'lime',
-             'pop2': 'pink',
-             'popclower': 'darkgrey',
-             'popelower': 'grey',
-             'dopclower': 'green',
-             'dopelower': 'bisque',
-             'chollower': 'cyan'}
-    
-    fig, axs = plt.subplots(7, figsize=(8,45))
-    timestamps = [0, 100, 1000, 2000, 4000, 8000, 10000]
-    lipid_data = lipid
-    leaflet_data = leaflet
-    for i in range(len(timestamps)):
-        ff = timestamps[i]
-        data = lipid_data[ff]
-        leaflet_ = leaflet_data[ff]
-        x_data = data[:,0]
-        y_data = data[:,1]
-        x_leaflet_ = leaflet_[:,0]
-        y_leaflet_ = leaflet_[:,1]
-        z_leaflet_ = leaflet_[:,2]
-        axs[i].scatter(x_data, y_data, color=colordict[str(name)], s=10, edgecolors= "black", linewidths=0.2, zorder=10)
-        g = axs[i].tricontourf(x_leaflet_,y_leaflet_,z_leaflet_, vmin=70, vmax=360, zorder=5)
-        axs[i].set_xlabel("X ($\AA$)")
-        axs[i].set_ylabel("Y ($\AA$)")
-        plt.colorbar(g, label= "z-height ($\AA$)")
-        axs[i].set_title(f"{ff} ns")
-    fig.tight_layout()
-    if not os.path.isdir("lipid_2d"):
-        os.makedirs("lipid_2d")
-    plt.savefig(f"lipid_2d/{name}_ts.png",dpi=300)
-    plt.show()
